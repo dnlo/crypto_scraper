@@ -8,6 +8,8 @@ import (
 	"strings"
 	"regexp"
 	"fmt"
+	"strconv"
+
 	
 	"github.com/gocolly/colly"
 	"github.com/martinlindhe/notify"
@@ -17,6 +19,7 @@ type Conf struct {
 	StartDate string
 	EndDate string
 	FileName string
+	NumOfPages int
 }
 
 func confValue(param string) string {
@@ -37,6 +40,8 @@ func readConf(filePath string) (*Conf, error) {
 	rStartDate := regexp.MustCompile("^start_date:")
 	rEndDate := regexp.MustCompile("^end_date:")
 	rFileName := regexp.MustCompile("^file_name:")
+	rNumOfPages := regexp.MustCompile("^first:")
+
 	
 	for _, v := range sp {
 		if rStartDate.MatchString(v) {
@@ -47,6 +52,13 @@ func readConf(filePath string) (*Conf, error) {
 		}
 		if rFileName.MatchString(v) {
 			conf.FileName = strings.TrimSpace(confValue(v))
+		}
+		if rNumOfPages.MatchString(v) {
+			val := strings.TrimSpace(confValue(v))
+			conf.NumOfPages, err = strconv.Atoi(val)
+			if err != nil {
+				fmt.Println("Error in the config option first: ", err)
+			}
 		}
 	}
 	return conf, nil
@@ -85,6 +97,9 @@ func cleanConfDate(date string) string {
 func scrape(conf *Conf) {
 	startDate := cleanConfDate(conf.StartDate)
 	endDate := cleanConfDate(conf.EndDate)
+	numOfPages := conf.NumOfPages
+	
+	visited := 0
 	
 	fName := conf.FileName
 	file, err := os.Create(fName)
@@ -105,8 +120,16 @@ func scrape(conf *Conf) {
 	
 	// Gather and visit individual coin pages
 	c.OnHTML(".currency-name-container", func(e *colly.HTMLElement) {
-		link := e.Attr("href")
-		c.Visit(e.Request.AbsoluteURL(link+"historical-data/?start="+startDate+"&end="+endDate))
+		// If option first in the config file is set to 0 scrape all currencies
+		if numOfPages == 0 {
+			link := e.Attr("href")
+			c.Visit(e.Request.AbsoluteURL(link+"historical-data/?start="+startDate+"&end="+endDate))
+		}
+		if numOfPages > visited {
+			link := e.Attr("href")
+			c.Visit(e.Request.AbsoluteURL(link+"historical-data/?start="+startDate+"&end="+endDate))
+			visited += 1
+		}
 	})
 	
 	// Parse coin pages and write to file
